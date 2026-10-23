@@ -1,7 +1,8 @@
-import os
+from collections.abc import Generator
+
 import pytest
-from typing import Generator
-from whatsapp_ops_gateway.telemetry import get_metrics, GatewayMetrics
+
+from whatsapp_ops_gateway.telemetry import GatewayMetrics, get_metrics
 
 
 @pytest.fixture(autouse=True)

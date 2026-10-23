@@ -1,10 +1,11 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import requests
 
 from whatsapp_ops_gateway.client import WhatsAppGatewayClient
-from whatsapp_ops_gateway.telemetry import get_metrics
-from whatsapp_ops_gateway.taxonomy import DispatchErrorCause
 from whatsapp_ops_gateway.sanitization import strip_markdown_media
+from whatsapp_ops_gateway.taxonomy import DispatchErrorCause
+from whatsapp_ops_gateway.telemetry import get_metrics
 
 
 def _mock_success_response():
@@ -21,7 +22,9 @@ def _mock_server_error_response():
     resp.status_code = 503
     resp.ok = False
     resp.text = "Service Unavailable"
-    resp.raise_for_status.side_effect = requests.exceptions.HTTPError("503 Server Error", response=resp)
+    resp.raise_for_status.side_effect = requests.exceptions.HTTPError(
+        "503 Server Error", response=resp
+    )
     return resp
 
 
@@ -49,7 +52,9 @@ def test_end_to_end_pipeline_success(isolated_media_dir):
         mock_post.return_value = _mock_success_response()
 
         raw_phone = "+52 (472) 699-1461"
-        raw_message = f"Incident #4490 report: ![Chart]({isolated_media_dir}/chart.png) All nodes restored."
+        raw_message = (
+            f"Incident #4490 report: ![Chart]({isolated_media_dir}/chart.png) All nodes restored."
+        )
         expected_cleaned = strip_markdown_media(raw_message, isolated_media_dir)
 
         result = client.send_message(
@@ -111,8 +116,7 @@ def test_end_to_end_retry_exhaustion_telemetry():
 
     client = WhatsAppGatewayClient(token="valid_token", mock_whatsapp=False)
 
-    with patch("time.sleep", return_value=None), \
-         patch("requests.Session.post") as mock_post:
+    with patch("time.sleep", return_value=None), patch("requests.Session.post") as mock_post:
         mock_post.side_effect = [
             _mock_server_error_response(),
             _mock_server_error_response(),

@@ -1,8 +1,7 @@
 import re
-from typing import Optional
 
 
-def sanitize_phone(raw_phone: Optional[str]) -> str:
+def sanitize_phone(raw_phone: str | None) -> str:
     """
     Normalizes arbitrary phone string into strict E.164 standard with + prefix.
     Supports Mexican 10-digit format by prepending mobile country code (+521).
@@ -23,7 +22,7 @@ def sanitize_phone(raw_phone: Optional[str]) -> str:
     return f"+{digits}"
 
 
-def resolve_media_path(media_path: Optional[str], shared_media_dir: str) -> Optional[str]:
+def resolve_media_path(media_path: str | None, shared_media_dir: str) -> str | None:
     """
     Validates and remaps media paths within the authorized shared mount directory.
     Returns None if the path is outside the authorized directory.
@@ -63,5 +62,7 @@ def detect_ux_leak(message: str, shared_media_dir: str) -> bool:
         return False
 
     shared_media_dir = shared_media_dir.rstrip("/")
-    leak_pattern = rf"(<media>|/tmp/|!\[.*?\]\((?!https?://|{re.escape(shared_media_dir)}/)[^\)]+\))"
+    leak_pattern = (
+        rf"(<media>|/tmp/|!\[.*?\]\((?!https?://|{re.escape(shared_media_dir)}/)[^\)]+\))"
+    )
     return bool(re.search(leak_pattern, message))

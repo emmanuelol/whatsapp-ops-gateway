@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 
 class GatewayMetrics:
@@ -23,7 +23,7 @@ class GatewayMetrics:
         self._keepalive_failures_total: int = 0
         self._sanitization_redactions_total: int = 0
         self._dispatch_attempts_total: int = 0
-        self._dispatch_errors_total: Dict[str, int] = {}
+        self._dispatch_errors_total: dict[str, int] = {}
 
     def record_idempotency_hit(self) -> None:
         """Increment count of prevented duplicate dispatches."""
@@ -48,14 +48,12 @@ class GatewayMetrics:
     def record_dispatch_error(self, cause: str) -> None:
         """Increment errors partitioned by canonical taxonomy cause."""
         with self._lock:
-            self._dispatch_errors_total[cause] = (
-                self._dispatch_errors_total.get(cause, 0) + 1
-            )
+            self._dispatch_errors_total[cause] = self._dispatch_errors_total.get(cause, 0) + 1
 
-    def get_snapshot(self) -> Dict[str, int]:
+    def get_snapshot(self) -> dict[str, int]:
         """Return point-in-time dictionary snapshot of all metrics."""
         with self._lock:
-            snapshot: Dict[str, int] = {
+            snapshot: dict[str, int] = {
                 "idempotency_hits_total": self._idempotency_hits_total,
                 "keepalive_failures_total": self._keepalive_failures_total,
                 "sanitization_redactions_total": self._sanitization_redactions_total,
@@ -121,8 +119,8 @@ class JsonLogFormatter(logging.Formatter):
     """Structured JSON formatter for production log aggregators."""
 
     def format(self, record: logging.LogRecord) -> str:
-        payload: Dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+        payload: dict[str, Any] = {
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

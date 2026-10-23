@@ -1,5 +1,6 @@
 import os
 import threading
+
 import requests
 import requests.adapters
 
@@ -23,7 +24,7 @@ if hasattr(os, "register_at_fork"):
 def get_fork_safe_session() -> requests.Session:
     """
     Returns a per-process requests.Session (lazy, fork-safe, no transport retries).
-    
+
     RQ/Celery worker forks share file descriptors if not isolated. This singleton
     detects PID changes and drops parent connection pools immediately upon fork.
     Transport retries are set to 0 to prevent multiplicative retry amplification

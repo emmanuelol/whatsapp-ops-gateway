@@ -1,7 +1,7 @@
 import hashlib
 import uuid
-from datetime import datetime, timezone
-from typing import Optional, TYPE_CHECKING
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from whatsapp_ops_gateway.telemetry import GatewayMetrics
@@ -12,9 +12,9 @@ DEFAULT_IDEMPOTENCY_WINDOW_S = 600
 def compute_idempotency_key(
     phone: str,
     message: str,
-    media_path: Optional[str] = None,
+    media_path: str | None = None,
     window_seconds: int = DEFAULT_IDEMPOTENCY_WINDOW_S,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
     metrics: Optional["GatewayMetrics"] = None,
 ) -> str:
     """
@@ -26,9 +26,9 @@ def compute_idempotency_key(
     window expires.
     """
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
     elif now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
+        now = now.replace(tzinfo=UTC)
 
     timestamp = int(now.timestamp())
     window = timestamp // window_seconds
@@ -47,8 +47,8 @@ def compute_idempotency_key(
 def compute_interactive_key(
     phone: str,
     prefix: str = "interactive",
-    date_str: Optional[str] = None,
-    entropy: Optional[str] = None,
+    date_str: str | None = None,
+    entropy: str | None = None,
 ) -> str:
     """
     Computes an entropy-backed idempotency key for interactive user requests.
@@ -57,7 +57,7 @@ def compute_interactive_key(
     with daily automated reports.
     """
     if date_str is None:
-        date_str = datetime.now(timezone.utc).date().isoformat()
+        date_str = datetime.now(UTC).date().isoformat()
     if entropy is None:
         entropy = uuid.uuid4().hex
 

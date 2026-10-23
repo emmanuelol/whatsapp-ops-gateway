@@ -1,19 +1,28 @@
-import os
+import contextlib
 import json
 import logging
-from typing import Optional, Callable, Any, Dict
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, RetryCallState
+import os
+from collections.abc import Callable
+from typing import Any
+
 import requests
 import urllib3.exceptions
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
-from whatsapp_ops_gateway.session import get_fork_safe_session
 from whatsapp_ops_gateway.idempotency import compute_idempotency_key
 from whatsapp_ops_gateway.sanitization import (
-    sanitize_phone,
-    resolve_media_path,
-    strip_markdown_media,
     detect_ux_leak,
+    resolve_media_path,
+    sanitize_phone,
+    strip_markdown_media,
 )
+from whatsapp_ops_gateway.session import get_fork_safe_session
 from whatsapp_ops_gateway.taxonomy import DispatchErrorCause
 from whatsapp_ops_gateway.telemetry import GatewayMetrics, get_metrics
 
@@ -41,13 +50,13 @@ class WhatsAppGatewayClient:
 
     def __init__(
         self,
-        token: Optional[str] = None,
-        gateway_url: Optional[str] = None,
-        shared_media_dir: Optional[str] = None,
-        enable_automated_dispatches: Optional[bool] = None,
-        mock_whatsapp: Optional[bool] = None,
-        alert_callback: Optional[Callable[[str], Any]] = None,
-        metrics: Optional[GatewayMetrics] = None,
+        token: str | None = None,
+        gateway_url: str | None = None,
+        shared_media_dir: str | None = None,
+        enable_automated_dispatches: bool | None = None,
+        mock_whatsapp: bool | None = None,
+        alert_callback: Callable[[str], Any] | None = None,
+        metrics: GatewayMetrics | None = None,
     ):
         raw_token = token if token is not None else os.getenv("OPENCLAW_TOKEN", "")
         self.token: str = raw_token.strip().strip("'\"")
@@ -74,29 +83,35 @@ class WhatsAppGatewayClient:
             self.mock_whatsapp: bool = mock_whatsapp
         else:
             mock_env = os.getenv("MOCK_WHATSAPP")
-            self.mock_whatsapp = mock_env.lower() in ("true", "1") if mock_env is not None else False
+            self.mock_whatsapp = (
+                mock_env.lower() in ("true", "1") if mock_env is not None else False
+            )
 
         self.alert_callback = alert_callback
         self.metrics: GatewayMetrics = metrics or get_metrics()
-        self.last_error: Optional[str] = None
+        self.last_error: str | None = None
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=2, max=10),
-        retry=retry_if_exception_type((
-            requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout,
-            requests.exceptions.HTTPError,
-            requests.exceptions.RequestException,
-            urllib3.exceptions.HTTPError,
-            ConnectionError,
-            TimeoutError,
-            OSError,
-        )),
+        retry=retry_if_exception_type(
+            (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.HTTPError,
+                requests.exceptions.RequestException,
+                urllib3.exceptions.HTTPError,
+                ConnectionError,
+                TimeoutError,
+                OSError,
+            )
+        ),
         reraise=True,
         before_sleep=_log_retry_attempt,
     )
-    def _execute_rest(self, api_url: str, headers: Dict[str, str], payload: Dict[str, Any]) -> requests.Response:
+    def _execute_rest(
+        self, api_url: str, headers: dict[str, str], payload: dict[str, Any]
+    ) -> requests.Response:
         session = get_fork_safe_session()
         response = session.post(api_url, json=payload, headers=headers, timeout=(5.0, 60.0))
         if response.status_code in (408, 429, 502, 503, 504) or response.status_code >= 500:
@@ -107,8 +122,8 @@ class WhatsAppGatewayClient:
         self,
         phone: str,
         message: str,
-        media_path: Optional[str] = None,
-        idempotency_key: Optional[str] = None,
+        media_path: str | None = None,
+        idempotency_key: str | None = None,
         force_real: bool = False,
         _is_system_alert: bool = False,
         interactive: bool = False,
@@ -120,7 +135,9 @@ class WhatsAppGatewayClient:
         if not clean_phone or clean_phone == "+":
             self.last_error = DispatchErrorCause.INVALID_PHONE.value
             self.metrics.record_dispatch_error(self.last_error)
-            logger.error("Cannot send WhatsApp message: Sanitized phone is empty (Original: %s).", phone)
+            logger.error(
+                "Cannot send WhatsApp message: Sanitized phone is empty (Original: %s).", phone
+            )
             return False
 
         # Centralized Policy Gatekeeper: Suppresses proactive traffic when disabled.
@@ -137,12 +154,14 @@ class WhatsAppGatewayClient:
             self.last_error = DispatchErrorCause.UX_LEAK.value
             self.metrics.record_sanitization_redaction()
             self.metrics.record_dispatch_error(self.last_error)
-            logger.warning("UX LEAK DETECTED: Message contained system tags or raw paths: %s", message)
+            logger.warning(
+                "UX LEAK DETECTED: Message contained system tags or raw paths: %s", message
+            )
             if self.alert_callback:
-                try:
-                    self.alert_callback(f"UX LEAK DETECTED: LLM hallucinated system data.\nPayload: {message}")
-                except Exception:
-                    pass
+                with contextlib.suppress(Exception):
+                    self.alert_callback(
+                        f"UX LEAK DETECTED: LLM hallucinated system data.\nPayload: {message}"
+                    )
             return False
 
         # Local Blast Shield / Mock Interceptor
@@ -168,9 +187,11 @@ class WhatsAppGatewayClient:
         }
 
         if not idempotency_key:
-            idempotency_key = compute_idempotency_key(clean_phone, message, media_path=resolved_media)
+            idempotency_key = compute_idempotency_key(
+                clean_phone, message, media_path=resolved_media
+            )
 
-        args_dict: Dict[str, Any] = {
+        args_dict: dict[str, Any] = {
             "channel": "whatsapp",
             "account": "default",
             "target": clean_phone,
@@ -181,7 +202,7 @@ class WhatsAppGatewayClient:
         if resolved_media:
             args_dict["media"] = resolved_media
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "tool": "message",
             "action": "send",
             "args": args_dict,
@@ -210,7 +231,8 @@ class WhatsAppGatewayClient:
                 self.metrics.record_dispatch_error(self.last_error)
                 logger.error(
                     "Gateway rejected dispatch to %s: non-dict JSON body: %.500r",
-                    clean_phone, response_data,
+                    clean_phone,
+                    response_data,
                 )
                 return False
 
@@ -220,7 +242,9 @@ class WhatsAppGatewayClient:
                 self.metrics.record_dispatch_error(self.last_error)
                 logger.error(
                     "Gateway rejected dispatch to %s: HTTP %s but ok!=True. Body: %.500r",
-                    clean_phone, response.status_code, response_data,
+                    clean_phone,
+                    response.status_code,
+                    response_data,
                 )
                 return False
 

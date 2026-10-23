@@ -1,7 +1,7 @@
 import json
 import logging
+
 from whatsapp_ops_gateway.telemetry import (
-    GatewayMetrics,
     JsonLogFormatter,
     get_metrics,
 )
@@ -33,7 +33,7 @@ def test_metrics_recording():
     assert metrics.get_snapshot()["dispatch_attempts_total"] == 2
 
     metrics.record_dispatch_error("timeout")
-    assert metrics.get_snapshot()["dispatch_errors_total{cause=\"timeout\"}"] == 1
+    assert metrics.get_snapshot()['dispatch_errors_total{cause="timeout"}'] == 1
 
 
 def test_render_prometheus():

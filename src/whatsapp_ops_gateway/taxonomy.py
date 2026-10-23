@@ -1,8 +1,9 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class DispatchErrorCause(str, Enum):
+class DispatchErrorCause(StrEnum):
     """Structured error taxonomy for WhatsApp dispatch failures."""
+
     INVALID_PHONE = "invalid_phone"
     UX_LEAK = "ux_leak"
     MISSING_TOKEN = "missing_token"

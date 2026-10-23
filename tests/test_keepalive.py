@@ -1,7 +1,6 @@
-import os
 import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from whatsapp_ops_gateway.keepalive import GatewayKeepalive
 
 
@@ -13,7 +12,7 @@ def test_bridge_health_success(tmp_path):
     with patch("requests.get", return_value=mock_resp):
         assert keepalive.check_bridge_health() is True
 
-    with open(state_file, "r") as f:
+    with open(state_file) as f:
         data = json.load(f)
     assert data["bridge_failures"] == 0
     assert data["bridge_alert_sent"] is False
@@ -51,7 +50,7 @@ def test_bridge_health_alert_on_three_consecutive_failures(tmp_path):
     with patch("requests.get", return_value=mock_ok_resp):
         assert keepalive.check_bridge_health() is True
 
-    with open(state_file, "r") as f:
+    with open(state_file) as f:
         data = json.load(f)
     assert data["bridge_failures"] == 0
     assert data["bridge_alert_sent"] is False
@@ -70,8 +69,10 @@ def test_keepalive_ping_flow(tmp_path):
     )
 
     mock_head_resp = MagicMock(status_code=200)
-    with patch("requests.Session.head", return_value=mock_head_resp), \
-         patch("requests.get", return_value=MagicMock(status_code=200)):
+    with (
+        patch("requests.Session.head", return_value=mock_head_resp),
+        patch("requests.get", return_value=MagicMock(status_code=200)),
+    ):
         keepalive.ping(force=True)
 
     assert mock_client.send_message.call_count == 1
@@ -81,7 +82,7 @@ def test_keepalive_ping_flow(tmp_path):
     assert kwargs.get("_is_system_alert") is True
     assert "keepalive:+5215512345678:" in kwargs.get("idempotency_key")
 
-    with open(state_file, "r") as f:
+    with open(state_file) as f:
         data = json.load(f)
     assert data["next_run"] > 0
     assert 12 <= data["delay_minutes"] <= 25

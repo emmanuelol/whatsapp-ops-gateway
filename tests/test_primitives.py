@@ -1,27 +1,27 @@
 import os
 import threading
-from datetime import datetime, timezone
-import requests
-import pytest
+from datetime import UTC, datetime
 
-from whatsapp_ops_gateway.taxonomy import DispatchErrorCause
-from whatsapp_ops_gateway.session import (
-    get_fork_safe_session,
-    _reset_session_after_fork,
-)
+import requests
+
 from whatsapp_ops_gateway.idempotency import (
     compute_idempotency_key,
     compute_interactive_key,
 )
 from whatsapp_ops_gateway.sanitization import (
-    sanitize_phone,
-    resolve_media_path,
-    strip_markdown_media,
     detect_ux_leak,
+    resolve_media_path,
+    sanitize_phone,
+    strip_markdown_media,
 )
-
+from whatsapp_ops_gateway.session import (
+    _reset_session_after_fork,
+    get_fork_safe_session,
+)
+from whatsapp_ops_gateway.taxonomy import DispatchErrorCause
 
 # --- 1. Session & Fork Isolation Tests ---
+
 
 def test_session_returns_requests_session_with_zero_transport_retries():
     session = get_fork_safe_session()
@@ -66,8 +66,9 @@ def test_session_resets_after_fork_simulation(monkeypatch):
 
 # --- 2. Idempotency Key Generation Tests ---
 
+
 def test_compute_idempotency_key_is_deterministic_for_same_payload():
-    dt = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
+    dt = datetime(2026, 10, 22, 12, 0, 0, tzinfo=UTC)
     k1 = compute_idempotency_key("+5215512345678", "Hello world", now=dt)
     k2 = compute_idempotency_key("+5215512345678", "Hello world", now=dt)
     assert k1 == k2
@@ -75,28 +76,33 @@ def test_compute_idempotency_key_is_deterministic_for_same_payload():
 
 
 def test_compute_idempotency_key_distinguishes_media_only_sends():
-    dt = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
+    dt = datetime(2026, 10, 22, 12, 0, 0, tzinfo=UTC)
     k1 = compute_idempotency_key("+5215512345678", "", media_path="/media/a.png", now=dt)
     k2 = compute_idempotency_key("+5215512345678", "", media_path="/media/b.png", now=dt)
     assert k1 != k2
 
 
 def test_compute_idempotency_key_rotates_across_time_windows():
-    dt1 = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
-    dt2 = datetime(2026, 10, 22, 12, 11, 0, tzinfo=timezone.utc)  # +11 minutes (> 600s)
+    dt1 = datetime(2026, 10, 22, 12, 0, 0, tzinfo=UTC)
+    dt2 = datetime(2026, 10, 22, 12, 11, 0, tzinfo=UTC)  # +11 minutes (> 600s)
     k1 = compute_idempotency_key("+5215512345678", "Keepalive Ping", now=dt1)
     k2 = compute_idempotency_key("+5215512345678", "Keepalive Ping", now=dt2)
     assert k1 != k2
 
 
 def test_compute_interactive_key():
-    k1 = compute_interactive_key("+5215512345678", prefix="cfo_http", date_str="2026-10-22", entropy="uuid-1")
-    k2 = compute_interactive_key("+5215512345678", prefix="cfo_http", date_str="2026-10-22", entropy="uuid-2")
+    k1 = compute_interactive_key(
+        "+5215512345678", prefix="cfo_http", date_str="2026-10-22", entropy="uuid-1"
+    )
+    k2 = compute_interactive_key(
+        "+5215512345678", prefix="cfo_http", date_str="2026-10-22", entropy="uuid-2"
+    )
     assert k1 != k2
     assert len(k1) == 64
 
 
 # --- 3. Sanitization & UX Leak Tests ---
+
 
 def test_sanitize_phone():
     # 10 digits
@@ -112,7 +118,9 @@ def test_sanitize_phone():
 
 def test_resolve_media_path():
     shared_dir = "/shared_media"
-    assert resolve_media_path("/app/shared_media/chart.png", shared_dir) == "/shared_media/chart.png"
+    assert (
+        resolve_media_path("/app/shared_media/chart.png", shared_dir) == "/shared_media/chart.png"
+    )
     assert resolve_media_path("/shared_media/chart.png", shared_dir) == "/shared_media/chart.png"
     assert resolve_media_path("/etc/passwd", shared_dir) is None
     assert resolve_media_path(None, shared_dir) is None
@@ -135,6 +143,7 @@ def test_detect_ux_leak():
 
 
 # --- 4. Taxonomy Constants Tests ---
+
 
 def test_dispatch_error_cause_taxonomy():
     assert DispatchErrorCause.INVALID_PHONE.value == "invalid_phone"
