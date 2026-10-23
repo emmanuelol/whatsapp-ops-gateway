@@ -17,6 +17,11 @@ from whatsapp_ops_gateway.sanitization import (
     strip_markdown_media,
     detect_ux_leak,
 )
+from whatsapp_ops_gateway.telemetry import (
+    GatewayMetrics,
+    JsonLogFormatter,
+    get_metrics,
+)
 
 __all__ = [
     "__version__",
@@ -28,4 +33,7 @@ __all__ = [
     "resolve_media_path",
     "strip_markdown_media",
     "detect_ux_leak",
+    "GatewayMetrics",
+    "JsonLogFormatter",
+    "get_metrics",
 ]
