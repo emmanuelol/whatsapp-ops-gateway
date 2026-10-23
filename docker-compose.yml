@@ -4,6 +4,7 @@ services:
     image: whatsapp-ops-gateway:latest
     environment:
       - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app/src
     volumes:
       - ./tests:/app/tests:ro
-      - ./src/whatsapp_ops_gateway:/usr/local/lib/python3.11/site-packages/whatsapp_ops_gateway:ro
+      - ./src/whatsapp_ops_gateway:/app/src/whatsapp_ops_gateway:ro
