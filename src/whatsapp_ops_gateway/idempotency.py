@@ -1,7 +1,10 @@
 import hashlib
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from whatsapp_ops_gateway.telemetry import GatewayMetrics
 
 DEFAULT_IDEMPOTENCY_WINDOW_S = 600
 
@@ -12,6 +15,7 @@ def compute_idempotency_key(
     media_path: Optional[str] = None,
     window_seconds: int = DEFAULT_IDEMPOTENCY_WINDOW_S,
     now: Optional[datetime] = None,
+    metrics: Optional["GatewayMetrics"] = None,
 ) -> str:
     """
     Computes a deterministic, time-quantized idempotency key.
@@ -32,7 +36,12 @@ def compute_idempotency_key(
     content_hash = hashlib.sha256(message.encode("utf-8")).hexdigest()
     media_str = media_path or ""
     hash_input = f"{phone}:{content_hash}:{media_str}:{window}"
-    return hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+    key = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+    if metrics is not None:
+        metrics.record_idempotency_hit()
+
+    return key
 
 
 def compute_interactive_key(

@@ -3,12 +3,13 @@ import time
 import random
 import json
 import logging
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Dict
 import requests
 import requests.adapters
 
 from whatsapp_ops_gateway.client import WhatsAppGatewayClient
 from whatsapp_ops_gateway.sanitization import sanitize_phone
+from whatsapp_ops_gateway.telemetry import GatewayMetrics, get_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ class GatewayKeepalive:
     1. Host loopback bridge probe (/health) with 3-failure threshold watchdog.
     2. Gateway HTTP HEAD liveness ping with pooled session.
     3. Self-targeted WhatsApp frame on 12-25m jitter interval to prevent Meta 30m idle disconnects.
+    4. First-class telemetry instrumentation on health degradation and probe failures.
     """
 
     def __init__(
@@ -31,30 +33,43 @@ class GatewayKeepalive:
         bot_phone: Optional[str] = None,
         client: Optional[WhatsAppGatewayClient] = None,
         alert_callback: Optional[Callable[[str], Any]] = None,
+        metrics: Optional[GatewayMetrics] = None,
     ):
         self.state_file = state_file
-        self.bridge_url = bridge_url or os.getenv("KIOSK_BRIDGE_URL", "http://127.0.0.1:8080/health")
-        self.gateway_url = (gateway_url or os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789")).rstrip("/")
-        self.bot_phone = bot_phone or os.getenv("BOT_PHONE") or os.getenv("OPENCLAW_BOT_PHONE")
-        self.client = client or WhatsAppGatewayClient()
-        self.alert_callback = alert_callback
+        if bridge_url is not None:
+            self.bridge_url = bridge_url
+        else:
+            self.bridge_url = os.getenv("KIOSK_BRIDGE_URL") or "http://127.0.0.1:8080/health"
 
-    def _load_state(self) -> dict:
+        if gateway_url is not None:
+            self.gateway_url = gateway_url.rstrip("/")
+        else:
+            self.gateway_url = (os.getenv("OPENCLAW_GATEWAY_URL") or "http://127.0.0.1:18789").rstrip("/")
+
+        self.bot_phone: Optional[str] = bot_phone or os.getenv("BOT_PHONE") or os.getenv("OPENCLAW_BOT_PHONE")
+        self.client: WhatsAppGatewayClient = client or WhatsAppGatewayClient()
+        self.alert_callback = alert_callback
+        self.metrics: GatewayMetrics = metrics or get_metrics()
+
+    def _load_state(self) -> Dict[str, Any]:
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, "r") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return dict(data)
+                    return {}
             except Exception:
                 return {}
         return {}
 
-    def _save_state(self, state: dict) -> None:
+    def _save_state(self, state: Dict[str, Any]) -> None:
         try:
             os.makedirs(os.path.dirname(os.path.abspath(self.state_file)), exist_ok=True)
             with open(self.state_file, "w") as f:
                 json.dump(state, f)
         except Exception as e:
-            logger.error(f"Failed to save keepalive state: {e}")
+            logger.error("Failed to save keepalive state: %s", e)
 
     def check_bridge_health(self) -> bool:
         """
@@ -62,8 +77,8 @@ class GatewayKeepalive:
         triggers the alert callback once until health recovers.
         """
         state = self._load_state()
-        bridge_failures = state.get("bridge_failures", 0)
-        alert_sent = state.get("bridge_alert_sent", False)
+        bridge_failures: int = int(state.get("bridge_failures", 0))
+        alert_sent: bool = bool(state.get("bridge_alert_sent", False))
         is_healthy = False
 
         try:
@@ -72,13 +87,15 @@ class GatewayKeepalive:
                 is_healthy = True
                 bridge_failures = 0
                 alert_sent = False
-                logger.info(f"Bridge probe {self.bridge_url} OK.")
+                logger.info("Bridge probe %s OK.", self.bridge_url)
             else:
-                logger.warning(f"Bridge probe {self.bridge_url} returned HTTP {resp.status_code}")
+                logger.warning("Bridge probe %s returned HTTP %s", self.bridge_url, resp.status_code)
                 bridge_failures += 1
+                self.metrics.record_keepalive_failure()
         except Exception as e:
-            logger.warning(f"Bridge probe {self.bridge_url} failed: {e}")
+            logger.warning("Bridge probe %s failed: %s", self.bridge_url, e)
             bridge_failures += 1
+            self.metrics.record_keepalive_failure()
 
         if bridge_failures >= 3 and not alert_sent:
             alert_msg = (
@@ -105,7 +122,7 @@ class GatewayKeepalive:
         self.check_bridge_health()
 
         state = self._load_state()
-        next_run = state.get("next_run", 0.0)
+        next_run: float = float(state.get("next_run", 0.0))
 
         if not force and now < next_run:
             logger.info("Keepalive skipped: interval not yet reached.")
@@ -120,11 +137,13 @@ class GatewayKeepalive:
                 session.mount("https://", adapter)
                 resp = session.head(target, timeout=(3.0, 10.0))
                 if resp.status_code < 500:
-                    logger.info(f"Gateway HTTP Head probe OK (HTTP {resp.status_code}).")
+                    logger.info("Gateway HTTP Head probe OK (HTTP %s).", resp.status_code)
                 else:
-                    logger.warning(f"Gateway HTTP Head probe degraded (HTTP {resp.status_code}).")
+                    logger.warning("Gateway HTTP Head probe degraded (HTTP %s).", resp.status_code)
+                    self.metrics.record_keepalive_failure()
         except Exception as e:
-            logger.error(f"Gateway HTTP Head probe failed: {e}")
+            logger.error("Gateway HTTP Head probe failed: %s", e)
+            self.metrics.record_keepalive_failure()
 
         # WhatsApp WebSocket self-ping frame
         if not self.bot_phone:
